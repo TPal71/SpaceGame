@@ -13,8 +13,13 @@ const ENEMY_HEIGHT = 40;
 const BULLET_WIDTH = 10;
 const BULLET_HEIGHT = 20;
 
+const CONTROLS_HEIGHT = 100;
+const PLAYER_VERTICAL_MARGIN_FROM_CONTROLS = 20;
+
 const PLAYER_INITIAL_X = SCREEN_WIDTH / 2 - PLAYER_WIDTH / 2;
-const PLAYER_FIXED_Y = SCREEN_HEIGHT - PLAYER_HEIGHT - 50;
+const PLAYER_FIXED_Y = SCREEN_HEIGHT - PLAYER_HEIGHT - CONTROLS_HEIGHT - PLAYER_VERTICAL_MARGIN_FROM_CONTROLS;
+
+const KEYBOARD_MOVE_SPEED = 7; // Játékos sebessége billentyűzettel
 
 export default function App() {
   const [playerPositionState, setPlayerPositionState] = useState({ x: PLAYER_INITIAL_X, y: PLAYER_FIXED_Y });
@@ -27,7 +32,6 @@ export default function App() {
   const [playerHealthState, setPlayerHealthState] = useState(3);
   const [scoreState, setScoreState] = useState(0);
 
-  // Referenciák az állapotok aktuális értékének tárolására
   const playerPositionRef = useRef(playerPositionState);
   const enemiesRef = useRef(enemiesState);
   const bulletsRef = useRef(bulletsState);
@@ -35,7 +39,11 @@ export default function App() {
   const playerHealthRef = useRef(playerHealthState);
   const scoreRef = useRef(scoreState);
 
-  // Referenciák frissítése, ha az állapotok változnak
+  // Ref a billentyűzet állapotának tárolására (csak web)
+  const keysPressedRef = useRef({ a: false, s: false });
+  // Ref annak jelzésére, hogy a PanGesture aktív-e
+  const isPanningRef = useRef(false);
+
   useEffect(() => { playerPositionRef.current = playerPositionState; }, [playerPositionState]);
   useEffect(() => { enemiesRef.current = enemiesState; }, [enemiesState]);
   useEffect(() => { bulletsRef.current = bulletsState; }, [bulletsState]);
@@ -43,19 +51,57 @@ export default function App() {
   useEffect(() => { playerHealthRef.current = playerHealthState; }, [playerHealthState]);
   useEffect(() => { scoreRef.current = scoreState; }, [scoreState]);
 
-
   useEffect(() => {
     const listenerId = playerTranslateXAnim.addListener(({ value }) => {
-      // Itt setPlayerPositionState-et használunk, hogy a playerPositionRef is frissüljön
       setPlayerPositionState({ x: value, y: PLAYER_FIXED_Y });
     });
     return () => {
       playerTranslateXAnim.removeListener(listenerId);
     };
-  }, [playerTranslateXAnim, PLAYER_FIXED_Y]);
+  }, [playerTranslateXAnim]);
+
+  // Billentyűzet vezérlés webes platformon
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      return; // Csak webes platformon fusson
+    }
+
+    const handleKeyDown = (event) => {
+      if (gameOverRef.current) return; // Ne csináljon semmit, ha vége a játéknak
+      const key = event.key.toLowerCase();
+      if (key === 'a') {
+        keysPressedRef.current.a = true;
+      } else if (key === 's') { // 'S' billentyű jobbra mozgatáshoz
+        keysPressedRef.current.s = true;
+      }
+    };
+
+    const handleKeyUp = (event) => {
+      const key = event.key.toLowerCase();
+      if (key === 'a') {
+        keysPressedRef.current.a = false;
+      } else if (key === 's') {
+        keysPressedRef.current.s = false;
+      }
+    };
+
+    // Eseményfigyelők hozzáadása, ha a játék aktív
+    if (!gameOverState) {
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
+    }
+
+    // Tisztító függvény: eseményfigyelők eltávolítása
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      // Billentyűk állapotának visszaállítása a biztonság kedvéért
+      keysPressedRef.current = { a: false, s: false };
+    };
+  }, [gameOverState]); // Újra lefut, ha a gameOverState megváltozik
 
   const onPanGestureMove = (event) => {
-    if (gameOverRef.current) return; // Ref olvasása
+    if (gameOverRef.current) return;
     const { translationX } = event.nativeEvent;
     let newX = dragStartPlayerX.current + translationX;
 
@@ -66,23 +112,46 @@ export default function App() {
   };
 
   const onPanHandlerStateChange = (event) => {
-    if (gameOverRef.current) return; // Ref olvasása
+    if (gameOverRef.current) return;
     const { state } = event.nativeEvent;
     if (state === State.BEGAN) {
-      dragStartPlayerX.current = playerPositionRef.current.x; // Ref olvasása
+      dragStartPlayerX.current = playerPositionRef.current.x;
+      isPanningRef.current = true; // Pan gesztus elkezdődött
     } else if (state === State.END || state === State.CANCELLED || state === State.FAILED) {
-      dragStartPlayerX.current = playerPositionRef.current.x; // Ref olvasása
+      // A playerPositionRef.current.x már a legfrissebb értéket tartalmazza
+      // a playerTranslateXAnim listener-nek köszönhetően.
+      // dragStartPlayerX.current = playerPositionRef.current.x; // Ezt a BEGAN állapot kezeli
+      isPanningRef.current = false; // Pan gesztus befejeződött
     }
   };
 
-  // Játékciklus és ellenséggenerátor
   useEffect(() => {
-    if (gameOverRef.current) return () => {}; // Kezdeti ellenőrzés ref alapján
+    if (gameOverRef.current) return () => {};
 
     const gameLoop = setInterval(() => {
-      if (gameOverRef.current) { // Ellenőrzés minden ciklusban
-        clearInterval(gameLoop); // Leállítjuk, ha vége a játéknak
+      if (gameOverRef.current) {
+        clearInterval(gameLoop);
         return;
+      }
+
+      // Billentyűzetes mozgatás logikája (csak web és ha nincs aktív pan gesztus)
+      if (Platform.OS === 'web' && !isPanningRef.current) {
+        let currentX = playerPositionRef.current.x;
+        let newX = currentX;
+
+        if (keysPressedRef.current.a) {
+          newX -= KEYBOARD_MOVE_SPEED;
+        }
+        if (keysPressedRef.current.s) {
+          newX += KEYBOARD_MOVE_SPEED;
+        }
+
+        if (newX < 0) newX = 0;
+        else if (newX > SCREEN_WIDTH - PLAYER_WIDTH) newX = SCREEN_WIDTH - PLAYER_WIDTH;
+
+        if (newX !== currentX) {
+          playerTranslateXAnim.setValue(newX);
+        }
       }
       
       setEnemiesState(prevEnemies =>
@@ -103,12 +172,12 @@ export default function App() {
     }, 16);
 
     const enemyGenerator = setInterval(() => {
-      if (gameOverRef.current) { // Ellenőrzés
+      if (gameOverRef.current) {
         clearInterval(enemyGenerator);
         return;
       }
       const newEnemy = {
-        id: Date.now(),
+        id: Date.now() + Math.random(),
         x: Math.random() * (SCREEN_WIDTH - ENEMY_WIDTH),
         y: -ENEMY_HEIGHT,
       };
@@ -119,12 +188,10 @@ export default function App() {
       clearInterval(gameLoop);
       clearInterval(enemyGenerator);
     };
-  }, [gameOverState]); // Csak akkor indul újra, ha a gameOverState megváltozik (a refek kezelik a belső logikát)
+  }, [gameOverState]); // A gameLoop és enemyGenerator újraindul, ha a gameOverState változik
 
   const checkCollisions = () => {
-    // Olvassuk az aktuális értékeket a ref-ekből
     const currentPlayerPos = playerPositionRef.current;
-    // Fontos, hogy másolatokkal dolgozzunk, ha módosítani akarjuk őket lokálisan
     let currentEnemies = [...enemiesRef.current]; 
     let currentBullets = [...bulletsRef.current];
     let currentHealth = playerHealthRef.current;
@@ -134,11 +201,10 @@ export default function App() {
 
     let gameShouldBeOver = false;
 
-    // 1. Ellenség és játékos ütközése
     const enemiesToRemoveAfterPlayerHit = new Set();
     let playerHitInThisFrame = false;
     
-    const enemiesForPlayerCollision = [...currentEnemies]; // Másolat az iterációhoz
+    const enemiesForPlayerCollision = [...currentEnemies];
     enemiesForPlayerCollision.forEach(enemy => {
       if (
         currentPlayerPos.x < enemy.x + ENEMY_WIDTH &&
@@ -158,27 +224,21 @@ export default function App() {
       }
     });
     
-    let enemiesAfterPlayerCollision = currentEnemies;
     if (playerHitInThisFrame || enemiesToRemoveAfterPlayerHit.size > 0) {
-        setPlayerHealthState(currentHealth); // Közvetlen állapotfrissítés
-        enemiesAfterPlayerCollision = currentEnemies.filter(e => !enemiesToRemoveAfterPlayerHit.has(e.id));
-        setEnemiesState(enemiesAfterPlayerCollision); // Közvetlen állapotfrissítés
+        setPlayerHealthState(currentHealth);
+        setEnemiesState(prevEnemies => prevEnemies.filter(e => !enemiesToRemoveAfterPlayerHit.has(e.id)));
     }
 
-    // 2. Lövedék és ellenség ütközése
     const bulletsToRemove = new Set();
     const enemiesToRemoveAfterBulletHit = new Set();
+    
+    // Fontos, hogy a enemiesRef.current-ből szűrjünk, ami a legfrissebb állapotot tükrözi
+    // a setEnemiesState aszinkron hívásai miatt.
+    const activeEnemiesForBulletCheck = enemiesRef.current.filter(e => !enemiesToRemoveAfterPlayerHit.has(e.id));
 
-    // Az `enemiesAfterPlayerCollision` tartalmazza azokat az ellenségeket,
-    // amelyek túlélték a játékossal való ütközést ebben a `checkCollisions` hívásban.
-    const bulletsForCollisionCheck = [...currentBullets]; // Másolat az iterációhoz
-    bulletsForCollisionCheck.forEach(bullet => {
-      // Fontos, hogy az `enemiesAfterPlayerCollision` naprakész listáján iteráljunk,
-      // vagy ha az setEnemiesState aszinkron, akkor a enemiesRef.current frissített másolatán.
-      // A biztonság kedvéért használjuk az `enemiesAfterPlayerCollision` lokális másolatot,
-      // ami a játékosütközés utáni állapotot tükrözi ebben a függvényhívásban.
-      for (const enemy of enemiesAfterPlayerCollision) { 
-        if (enemiesToRemoveAfterBulletHit.has(enemy.id)) { // Ha már eltalálta másik lövedék ebben a körben
+    currentBullets.forEach(bullet => { // currentBullets a checkCollisions elején lett inicializálva
+      for (const enemy of activeEnemiesForBulletCheck) { 
+        if (enemiesToRemoveAfterBulletHit.has(enemy.id)) {
             continue;
         }
         if (
@@ -199,38 +259,34 @@ export default function App() {
       setBulletsState(prevBullets => prevBullets.filter(b => !bulletsToRemove.has(b.id)));
     }
     if (enemiesToRemoveAfterBulletHit.size > 0) {
-      // A prevEnemies itt a setEnemiesState hívásakor aktuális enemiesState lesz.
-      // Ez már tartalmaznia kell a játékosütközés miatti eltávolításokat, ha a setEnemiesState szinkron lenne,
-      // de mivel aszinkron, a prevEnemies a legutóbbi render állapotát tükrözi.
-      // A legbiztosabb, ha a filter csak a lövedékütközésekre koncentrál.
       setEnemiesState(prevEnemies => prevEnemies.filter(e => !enemiesToRemoveAfterBulletHit.has(e.id)));
     }
     
-    // Pontszám frissítése
-    if (currentScore !== scoreRef.current) { // Olvasás ref-ből a primer állapot helyett
+    if (currentScore !== scoreRef.current) {
       setScoreState(currentScore);
     }
 
-    if (gameShouldBeOver && !gameOverRef.current) { // Olvasás ref-ből
+    if (gameShouldBeOver && !gameOverRef.current) {
       setGameOverState(true);
     }
   };
 
   const handleShoot = () => {
-    if (gameOverRef.current) return; // Ref olvasása
+    if (gameOverRef.current) return;
     const newBullet = {
-      id: Date.now(),
-      x: playerPositionRef.current.x + PLAYER_WIDTH / 2 - BULLET_WIDTH / 2, // Ref olvasása
-      y: playerPositionRef.current.y, // Ref olvasása
+      id: Date.now() + Math.random(),
+      x: playerPositionRef.current.x + PLAYER_WIDTH / 2 - BULLET_WIDTH / 2,
+      y: playerPositionRef.current.y,
     };
     setBulletsState(prevBullets => [...prevBullets, newBullet]);
   };
 
   const restartGame = () => {
     playerTranslateXAnim.setValue(PLAYER_INITIAL_X);
-    // Itt is a State-et állítjuk, ami majd frissíti a ref-et
     setPlayerPositionState({ x: PLAYER_INITIAL_X, y: PLAYER_FIXED_Y });
     dragStartPlayerX.current = PLAYER_INITIAL_X;
+    isPanningRef.current = false; // Pan állapot visszaállítása
+    keysPressedRef.current = { a: false, s: false }; // Billentyűzet állapot visszaállítása
 
     setEnemiesState([]);
     setBulletsState([]);
@@ -242,7 +298,6 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <View style={styles.statsContainer}>
-        {/* Itt az állapotváltozókat (state) használjuk a megjelenítéshez, ami rendben van */}
         <Text style={styles.statsText}>Életerő: {playerHealthState}</Text>
         <Text style={styles.statsText}>Pontszám: {scoreState}</Text>
       </View>
@@ -250,14 +305,14 @@ export default function App() {
         <PanGestureHandler
           onGestureEvent={onPanGestureMove}
           onHandlerStateChange={onPanHandlerStateChange}
+          // enabled={Platform.OS !== 'web'} // Opcionális: PanGestureHandler letiltása weben
         >
           <Animated.View style={{
             position: 'absolute',
-            left: playerTranslateXAnim,
             top: PLAYER_FIXED_Y,
             width: PLAYER_WIDTH,
             height: PLAYER_HEIGHT,
-            // backgroundColor: 'rgba(255, 0, 255, 0.5)', // Player vizuális megjelenítése a Player komponensben van
+            transform: [{ translateX: playerTranslateXAnim }],
             zIndex: 20,
           }}>
             <Player />
@@ -286,7 +341,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  // ... (styles változatlanok)
   container: {
     flex: 1,
     backgroundColor: '#000',
@@ -318,7 +372,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.7)',
     borderRadius: 10,
     alignItems: 'center',
-    zIndex: 10, 
+    zIndex: 100,
   },
   gameOverText: {
     color: 'white',
@@ -328,7 +382,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   controls: {
-    height: 100,
+    height: CONTROLS_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
     borderTopWidth: 1,
