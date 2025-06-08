@@ -1,1 +1,30 @@
 npx create-expo-app SpaceGame --template blank   
+
+// Ez a mi komponensünk, ami egy JavaScript függvény.
+export default function App() {
+
+  // 1. RÉSZ: A "GYÁR" LOGIKAI RÉSZE
+  // Itt történik a "munka" a színfalak mögött:
+  // - Állapotok létrehozása (useState)
+  // - Mellékhatások kezelése (useEffect)
+  // - Segédfüggvények definiálása
+  const [playerHealth, setPlayerHealth] = useState(100);
+  const [score, setScore] = useState(0);
+  // ... a játék többi logikája ...
+
+  // 2. RÉSZ: A "GYÁR" VÉGEREDMÉNYE - A VISSZATÉRÉSI ÉRTÉK
+  // Miután a logika lefutott, a függvény visszaadja (return)
+  // a végeredményt: a felhasználói felület tervrajzát.
+  // Ez a tervrajz a JSX kód.
+  return (
+    // Ez a blokk teljes egészében az App függvényen belül van.
+    // Ez az App() függvény visszatérési értéke.
+    <GestureHandlerRootView style={styles.container}>
+      <View style={styles.statsContainer}>
+        <Text style={styles.statsText}>Életerő: {playerHealth}</Text>
+        <Text style={styles.statsText}>Pontszám: {score}</Text>
+      </View>
+      {/* ...a játék többi eleme... */}
+    </GestureHandlerRootView>
+  );
+}
