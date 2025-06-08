@@ -25,8 +25,8 @@ const BULLET_VERTICAL_SPEED = 5;
 
 // Új konstansok az életerőhöz és pontszámhoz
 const INITIAL_PLAYER_HEALTH = 100;
-const HEALTH_DECREASE_ON_ESCAPE = 5; // Életerő csökkenés, ha egy ellenség elmenekül
-const HEALTH_INCREASE_ON_KILL = 10;  // Életerő növekedés, ha lelövünk egy ellenséget
+const HEALTH_DECREASE_ON_ESCAPE = 1; // Életerő csökkenés, ha egy ellenség elmenekül (MÓDOSÍTVA)
+const HEALTH_INCREASE_ON_KILL = 1;  // Életerő növekedés, ha lelövünk egy ellenséget (MÓDOSÍTVA)
 const SCORE_INCREASE_ON_KILL = 10;   // Pontszám növekedés, ha lelövünk egy ellenséget
 const PLAYER_DAMAGE_ON_HIT = 25;     // Életerő csökkenés, ha a játékost eltalálja egy ellenség (az eredeti 1 helyett)
 
@@ -114,7 +114,7 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
+useEffect(() => {
     if (gameOverRef.current) return () => {};
 
     const gameLoop = setInterval(() => {
@@ -132,31 +132,44 @@ export default function App() {
         if (newX !== currentX) playerTranslateXAnim.setValue(newX);
       }
       
-      // Ellenségek mozgatása és elmenekültek kezelése
-      let healthLostFromEscapesThisFrame = 0;
-      setEnemiesState(prevEnemies => {
-        const remainingEnemies = [];
-        prevEnemies.forEach(enemy => {
-          const newY = enemy.y + ENEMY_VERTICAL_SPEED;
-          if (newY < SCREEN_HEIGHT) {
-            remainingEnemies.push({ ...enemy, y: newY });
-          } else {
-            // Ellenség elmenekült
-            healthLostFromEscapesThisFrame += HEALTH_DECREASE_ON_ESCAPE;
-          }
-        });
-        return remainingEnemies;
-      });
+      // --- Ellenségek mozgatása, elmenekültek kezelése és életerő csökkentése ---
+      const currentEnemiesList = enemiesRef.current; // Aktuális ellenséglista a ref-ből
+      const nextEnemiesList = []; // Azok az ellenségek, amik a pályán maradnak
+      let healthLostThisTick = 0; // Az ebben a ciklusban elvesztett életerő
 
-      if (healthLostFromEscapesThisFrame > 0) {
-        setPlayerHealthState(prevHealth => {
-          const newHealth = Math.max(0, prevHealth - healthLostFromEscapesThisFrame);
+      // Végigmegyünk az aktuális ellenségeken, hogy meghatározzuk, ki menekül el
+      for (const enemy of currentEnemiesList) {
+        const newY = enemy.y + ENEMY_VERTICAL_SPEED;
+        if (newY < SCREEN_HEIGHT) {
+          // Ha az ellenség még a pályán van, hozzáadjuk a következő listához
+          nextEnemiesList.push({ ...enemy, y: newY });
+        } else {
+          // Ellenség elmenekült
+          healthLostThisTick += HEALTH_DECREASE_ON_ESCAPE;
+          // Egyszerűsített log az elmenekült ellenségről
+          console.log(`Enemy escaped! ID: ${enemy.id}. Health lost by this one: ${HEALTH_DECREASE_ON_ESCAPE}. (Initial health for tick was: ${playerHealthRef.current})`);
+        }
+      }
+
+      // Frissítjük az ellenségek állapotát azokkal, akik a pályán maradtak
+      // Mivel a nextEnemiesList már a teljes új állapotot tartalmazza, közvetlenül beállíthatjuk.
+      // Ha más logika is módosítaná az enemiesState-et a ticken belül, akkor a funkcionális frissítés lenne biztonságosabb.
+      setEnemiesState(nextEnemiesList);
+
+      // Ha volt életerő-veszteség az elmenekült ellenségek miatt, frissítjük a játékos életerejét
+      if (healthLostThisTick > 0) {
+         console.log(`Total health lost from escapes this frame: ${healthLostThisTick}`);
+        setPlayerHealthState(prevHealth => { // prevHealth itt a tényleges, sorba állított állapotérték
+          const newHealth = Math.max(0, prevHealth - healthLostThisTick);
+          console.log(`State update for escaped enemies: prevHealth from state: ${prevHealth}, newHealth to be set: ${newHealth}`);
           if (newHealth <= 0 && !gameOverRef.current) {
             setGameOverState(true);
           }
           return newHealth;
         });
       }
+      // --- Ellenségkezelés vége ---
+
 
       setBulletsState(prevBullets =>
         prevBullets.map(bullet => ({
@@ -193,23 +206,24 @@ export default function App() {
     };
   }, [gameOverState]);
 
-  const checkCollisions = () => {
+   const checkCollisions = () => {
     if (gameOverRef.current) return;
 
     const currentPlayerPos = playerPositionRef.current;
-    // Fontos, hogy a ref-ekböl olvassuk ki az aktuális értékeket a checkCollisions elején
-    let currentHealth = playerHealthRef.current;
+    let currentHealthLocal = playerHealthRef.current; // Ez az életerő az előző renderből
     let currentScore = scoreRef.current;
-    const currentEnemies = [...enemiesRef.current]; // Másolat az iterációhoz
-    const currentBullets = [...bulletsRef.current]; // Másolat az iterációhoz
+    const currentEnemies = [...enemiesRef.current]; 
+    const currentBullets = [...bulletsRef.current]; 
 
-    let gameShouldBeOver = false; // Lokális változó annak jelzésére, ha ebben a ciklusban lesz vége a játéknak
+    let gameShouldBeOver = false; 
 
     // 1. Ellenség és játékos ütközése
     const enemiesToRemoveAfterPlayerHit = new Set();
-    let playerWasHitThisFrame = false; // Hogy egy képkockában csak egyszer sebezzenek az ellenségek
+    let playerWasHitThisFrame = false; 
     
-    // Iterálás a currentEnemies másolaton
+    // Ideiglenes életerő-változó a checkCollisions logikájához
+    let healthAfterPlayerHit = currentHealthLocal;
+
     for (const enemy of currentEnemies) {
       if (
         currentPlayerPos.x < enemy.x + ENEMY_WIDTH &&
@@ -218,13 +232,12 @@ export default function App() {
         currentPlayerPos.y + PLAYER_HEIGHT > enemy.y
       ) {
         if (!playerWasHitThisFrame) {
-            currentHealth -= PLAYER_DAMAGE_ON_HIT; // Konstans használata a sebzéshez
+            healthAfterPlayerHit -= PLAYER_DAMAGE_ON_HIT; 
             playerWasHitThisFrame = true;
         }
         enemiesToRemoveAfterPlayerHit.add(enemy.id);
-        if (currentHealth <= 0) {
-          currentHealth = 0;
-          gameShouldBeOver = true;
+        if (healthAfterPlayerHit <= 0) {
+          // gameShouldBeOver-t itt még nem állítjuk, mert a healthAfterPlayerHit csak egy köztes számítás
         }
       }
     }
@@ -233,11 +246,13 @@ export default function App() {
     const bulletsToRemove = new Set();
     const enemiesToRemoveAfterBulletHit = new Set();
     
-    // Iterálás a currentBullets másolaton
+    // Ideiglenes életerő- és pontszám-változók a lövedékütközésekhez
+    // Ezek a játékosütközés utáni életerőből indulnak ki
+    let healthAfterBulletHits = healthAfterPlayerHit;
+    let scoreAfterBulletHits = currentScore;
+
     for (const bullet of currentBullets) {
-      // Iterálás a currentEnemies másolaton (azok, amik még nem lettek játékos által eltávolítva)
       for (const enemy of currentEnemies) { 
-        // Ha az ellenséget már eltalálta a játékos vagy egy másik lövedék ebben a körben, ne vizsgáljuk újra
         if (enemiesToRemoveAfterPlayerHit.has(enemy.id) || enemiesToRemoveAfterBulletHit.has(enemy.id)) {
             continue;
         }
@@ -249,21 +264,48 @@ export default function App() {
         ) {
           bulletsToRemove.add(bullet.id);
           enemiesToRemoveAfterBulletHit.add(enemy.id);
-          currentScore += SCORE_INCREASE_ON_KILL;
-          currentHealth += HEALTH_INCREASE_ON_KILL;
-          // Opcionális: Életerő maximalizálása
-          currentHealth = Math.min(INITIAL_PLAYER_HEALTH, currentHealth); 
+          scoreAfterBulletHits += SCORE_INCREASE_ON_KILL;
+          healthAfterBulletHits += HEALTH_INCREASE_ON_KILL;
           break; 
         }
       }
     }
+    
+    // Az életerő maximalizálása az INITIAL_PLAYER_HEALTH értékre
+    healthAfterBulletHits = Math.min(INITIAL_PLAYER_HEALTH, healthAfterBulletHits);
+    // Az életerő nem mehet 0 alá
+    healthAfterBulletHits = Math.max(0, healthAfterBulletHits);
+
+
+    // Meghatározzuk a checkCollisions által okozott nettó életerő-változást
+    const netHealthChangeFromCollisions = healthAfterBulletHits - currentHealthLocal; // currentHealthLocal az eredeti életerő a checkCollisions elejéről
 
     // Állapotok frissítése az ütközések után
-    if (playerWasHitThisFrame || currentHealth !== playerHealthRef.current) {
-        setPlayerHealthState(Math.max(0, currentHealth));
+    // Csak akkor hívjuk a setPlayerHealthState-et, ha a checkCollisions logikája ténylegesen változást okozott az életerőben.
+    if (netHealthChangeFromCollisions !== 0) {
+        setPlayerHealthState(prevActualHealth => {
+            // prevActualHealth már tartalmazza a gameLoop korábbi részéből (pl. ellenség elhagyja a pályát) származó változásokat.
+            // Ehhez adjuk hozzá a checkCollisions által számított nettó változást.
+            let newHealth = prevActualHealth + netHealthChangeFromCollisions;
+            newHealth = Math.max(0, newHealth); // Biztosítjuk, hogy ne menjen 0 alá
+            newHealth = Math.min(INITIAL_PLAYER_HEALTH, newHealth); // És ne menjen a maximum fölé
+            
+            if (newHealth <= 0 && !gameOverRef.current) { // Itt ellenőrizzük a játék végét a végleges új életerő alapján
+                gameShouldBeOver = true;
+            }
+            return newHealth;
+        });
+    } else if (healthAfterBulletHits <= 0 && currentHealthLocal > 0 && !gameOverRef.current) {
+        // Ha nem volt nettó változás, de az életerő 0-ra csökkent (pl. pont annyi sebzést kapott, amennyi életereje volt)
+        // és még nem game over. Ez a feltétel ritkábban teljesülhet a fenti logikával, de biztonsági ellenőrzés.
+        // Ebben az esetben is frissíteni kell, hogy a 0-s életerő beállítódjon.
+        setPlayerHealthState(0);
+        gameShouldBeOver = true;
     }
-    if (currentScore !== scoreRef.current) {
-      setScoreState(currentScore);
+
+
+    if (scoreAfterBulletHits !== currentScore) { // currentScore a scoreRef.current volt a checkCollisions elején
+      setScoreState(scoreAfterBulletHits);
     }
 
     const finalEnemiesToRemove = new Set([...enemiesToRemoveAfterPlayerHit, ...enemiesToRemoveAfterBulletHit]);
@@ -274,14 +316,14 @@ export default function App() {
       setBulletsState(prevBullets => prevBullets.filter(b => !bulletsToRemove.has(b.id)));
     }
     
-    // Játék vége ellenőrzése a checkCollisions végén
     if (gameShouldBeOver && !gameOverRef.current) {
       setGameOverState(true);
-    } else if (playerHealthRef.current <= 0 && !gameOverRef.current) { // Ha az életerő frissítés után lett 0
+    } else if (playerHealthRef.current <= 0 && !gameOverRef.current && !gameShouldBeOver) { 
+        // Ha a setPlayerHealthState (akár a gameLoop-ból, akár innen) már beállította az életerőt 0-ra,
+        // de a gameShouldBeOver még nem lett true ebben a ciklusban.
         setGameOverState(true);
     }
   };
-
   const handleShoot = () => {
     if (gameOverRef.current) return;
     const newBullet = {
