@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Dimensions, Animated, Button, Text, Platform } from 'react-native';
-import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-gesture-handler';
+// Módosított import: TapGestureHandler hozzáadva
+import { GestureHandlerRootView, PanGestureHandler, TapGestureHandler, State } from 'react-native-gesture-handler';
 import Player from './components/Player.js';
 import Enemy from './components/Enemy';
 import Bullet from './components/Bullet';
@@ -16,7 +17,7 @@ const ENEMY_HEIGHT = 40;
 const BULLET_WIDTH = 10;
 const BULLET_HEIGHT = 20;
 
-const CONTROLS_HEIGHT = 120;
+const CONTROLS_HEIGHT = 120; // Ezt a magasságot később csökkentheted, ha a vezérlősáv tartalma megváltozik
 const PLAYER_VERTICAL_MARGIN_FROM_CONTROLS = -10;
 
 const PLAYER_INITIAL_X = SCREEN_WIDTH / 2 - PLAYER_WIDTH / 2;
@@ -28,10 +29,10 @@ const BULLET_VERTICAL_SPEED = 5;
 
 // Új konstansok az életerőhöz és pontszámhoz
 const INITIAL_PLAYER_HEALTH = 100;
-const HEALTH_DECREASE_ON_ESCAPE = 1; // Életerő csökkenés, ha egy ellenség elmenekül (MÓDOSÍTVA)
-const HEALTH_INCREASE_ON_KILL = 1;  // Életerő növekedés, ha lelövünk egy ellenséget (MÓDOSÍTVA)
-const SCORE_INCREASE_ON_KILL = 10;   // Pontszám növekedés, ha lelövünk egy ellenséget
-const PLAYER_DAMAGE_ON_HIT = 25;     // Életerő csökkenés, ha a játékost eltalálja egy ellenség (az eredeti 1 helyett)
+const HEALTH_DECREASE_ON_ESCAPE = 1; 
+const HEALTH_INCREASE_ON_KILL = 1;  
+const SCORE_INCREASE_ON_KILL = 10;   
+const PLAYER_DAMAGE_ON_HIT = 25;     
 
 
 export default function App() {
@@ -42,7 +43,6 @@ export default function App() {
   const [enemiesState, setEnemiesState] = useState([]);
   const [bulletsState, setBulletsState] = useState([]);
   const [gameOverState, setGameOverState] = useState(false);
-  // Életerő inicializálása az új konstanssal
   const [playerHealthState, setPlayerHealthState] = useState(INITIAL_PLAYER_HEALTH);
   const [scoreState, setScoreState] = useState(0);
 
@@ -117,6 +117,27 @@ export default function App() {
     }
   };
 
+  // Lövés függvény (változatlan)
+  const handleShoot = () => {
+    if (gameOverRef.current) return;
+    const newBullet = {
+      id: Date.now() + Math.random(),
+      x: playerPositionRef.current.x + PLAYER_WIDTH / 2 - BULLET_WIDTH / 2,
+      y: playerPositionRef.current.y,
+    };
+    setBulletsState(prevBullets => [...prevBullets, newBullet]);
+  };
+
+  // ÚJ: Kezelő függvény a játékosra való koppintáshoz
+  const onPlayerTap = (event) => {
+    if (gameOverRef.current) return;
+    // A TapGestureHandler akkor váltja ki az END állapotot, amikor a koppintás sikeresen befejeződött.
+    // Beépített logikája van (pl. maxDist), hogy megkülönböztesse a húzástól.
+    if (event.nativeEvent.state === State.END) {
+      handleShoot();
+    }
+  };
+
 useEffect(() => {
     if (gameOverRef.current) return () => {};
 
@@ -135,43 +156,33 @@ useEffect(() => {
         if (newX !== currentX) playerTranslateXAnim.setValue(newX);
       }
       
-      // --- Ellenségek mozgatása, elmenekültek kezelése és életerő csökkentése ---
-      const currentEnemiesList = enemiesRef.current; // Aktuális ellenséglista a ref-ből
-      const nextEnemiesList = []; // Azok az ellenségek, amik a pályán maradnak
-      let healthLostThisTick = 0; // Az ebben a ciklusban elvesztett életerő
+      const currentEnemiesList = enemiesRef.current; 
+      const nextEnemiesList = []; 
+      let healthLostThisTick = 0; 
 
-      // Végigmegyünk az aktuális ellenségeken, hogy meghatározzuk, ki menekül el
       for (const enemy of currentEnemiesList) {
         const newY = enemy.y + ENEMY_VERTICAL_SPEED;
         if (newY < SCREEN_HEIGHT) {
-          // Ha az ellenség még a pályán van, hozzáadjuk a következő listához
           nextEnemiesList.push({ ...enemy, y: newY });
         } else {
-          // Ellenség elmenekült
           healthLostThisTick += HEALTH_DECREASE_ON_ESCAPE;
-          // Egyszerűsített log az elmenekült ellenségről
-          console.log(`Enemy escaped! ID: ${enemy.id}. Health lost by this one: ${HEALTH_DECREASE_ON_ESCAPE}. (Initial health for tick was: ${playerHealthRef.current})`);
+          // console.log(`Enemy escaped! ID: ${enemy.id}. Health lost by this one: ${HEALTH_DECREASE_ON_ESCAPE}. (Initial health for tick was: ${playerHealthRef.current})`);
         }
       }
 
-      // Frissítjük az ellenségek állapotát azokkal, akik a pályán maradtak
-      // Mivel a nextEnemiesList már a teljes új állapotot tartalmazza, közvetlenül beállíthatjuk.
-      // Ha más logika is módosítaná az enemiesState-et a ticken belül, akkor a funkcionális frissítés lenne biztonságosabb.
       setEnemiesState(nextEnemiesList);
 
-      // Ha volt életerő-veszteség az elmenekült ellenségek miatt, frissítjük a játékos életerejét
       if (healthLostThisTick > 0) {
-         console.log(`Total health lost from escapes this frame: ${healthLostThisTick}`);
-        setPlayerHealthState(prevHealth => { // prevHealth itt a tényleges, sorba állított állapotérték
+        //  console.log(`Total health lost from escapes this frame: ${healthLostThisTick}`);
+        setPlayerHealthState(prevHealth => { 
           const newHealth = Math.max(0, prevHealth - healthLostThisTick);
-          console.log(`State update for escaped enemies: prevHealth from state: ${prevHealth}, newHealth to be set: ${newHealth}`);
+          // console.log(`State update for escaped enemies: prevHealth from state: ${prevHealth}, newHealth to be set: ${newHealth}`);
           if (newHealth <= 0 && !gameOverRef.current) {
             setGameOverState(true);
           }
           return newHealth;
         });
       }
-      // --- Ellenségkezelés vége ---
 
 
       setBulletsState(prevBullets =>
@@ -183,7 +194,6 @@ useEffect(() => {
       
       checkCollisions();
 
-      // Biztonsági ellenőrzés a játék végére, ha az életerő elfogyott
       if (playerHealthRef.current <= 0 && !gameOverRef.current) {
         setGameOverState(true);
       }
@@ -213,18 +223,16 @@ useEffect(() => {
     if (gameOverRef.current) return;
 
     const currentPlayerPos = playerPositionRef.current;
-    let currentHealthLocal = playerHealthRef.current; // Ez az életerő az előző renderből
+    let currentHealthLocal = playerHealthRef.current; 
     let currentScore = scoreRef.current;
     const currentEnemies = [...enemiesRef.current]; 
     const currentBullets = [...bulletsRef.current]; 
 
     let gameShouldBeOver = false; 
 
-    // 1. Ellenség és játékos ütközése
     const enemiesToRemoveAfterPlayerHit = new Set();
     let playerWasHitThisFrame = false; 
     
-    // Ideiglenes életerő-változó a checkCollisions logikájához
     let healthAfterPlayerHit = currentHealthLocal;
 
     for (const enemy of currentEnemies) {
@@ -239,18 +247,12 @@ useEffect(() => {
             playerWasHitThisFrame = true;
         }
         enemiesToRemoveAfterPlayerHit.add(enemy.id);
-        if (healthAfterPlayerHit <= 0) {
-          // gameShouldBeOver-t itt még nem állítjuk, mert a healthAfterPlayerHit csak egy köztes számítás
-        }
       }
     }
     
-    // Lövedék és ellenség ütközése
     const bulletsToRemove = new Set();
     const enemiesToRemoveAfterBulletHit = new Set();
     
-    // Ideiglenes életerő- és pontszám-változók a lövedékütközésekhez
-    // Ezek a játékosütközés utáni életerőből indulnak ki
     let healthAfterBulletHits = healthAfterPlayerHit;
     let scoreAfterBulletHits = currentScore;
 
@@ -274,40 +276,29 @@ useEffect(() => {
       }
     }
     
-    // Az életerő maximalizálása az INITIAL_PLAYER_HEALTH értékre
     healthAfterBulletHits = Math.min(INITIAL_PLAYER_HEALTH, healthAfterBulletHits);
-    // Az életerő nem mehet 0 alá
     healthAfterBulletHits = Math.max(0, healthAfterBulletHits);
 
+    const netHealthChangeFromCollisions = healthAfterBulletHits - currentHealthLocal; 
 
-    // Meghatározzuk a checkCollisions által okozott nettó életerő-változást
-    const netHealthChangeFromCollisions = healthAfterBulletHits - currentHealthLocal; // currentHealthLocal az eredeti életerő a checkCollisions elejéről
-
-    // Állapotok frissítése az ütközések után
-    // Csak akkor hívjuk a setPlayerHealthState-et, ha a checkCollisions logikája ténylegesen változást okozott az életerőben.
     if (netHealthChangeFromCollisions !== 0) {
         setPlayerHealthState(prevActualHealth => {
-            // prevActualHealth már tartalmazza a gameLoop korábbi részéből (pl. ellenség elhagyja a pályát) származó változásokat.
-            // Ehhez adjuk hozzá a checkCollisions által számított nettó változást.
             let newHealth = prevActualHealth + netHealthChangeFromCollisions;
-            newHealth = Math.max(0, newHealth); // Biztosítjuk, hogy ne menjen 0 alá
-            newHealth = Math.min(INITIAL_PLAYER_HEALTH, newHealth); // És ne menjen a maximum fölé
+            newHealth = Math.max(0, newHealth); 
+            newHealth = Math.min(INITIAL_PLAYER_HEALTH, newHealth); 
             
-            if (newHealth <= 0 && !gameOverRef.current) { // Itt ellenőrizzük a játék végét a végleges új életerő alapján
+            if (newHealth <= 0 && !gameOverRef.current) { 
                 gameShouldBeOver = true;
             }
             return newHealth;
         });
     } else if (healthAfterBulletHits <= 0 && currentHealthLocal > 0 && !gameOverRef.current) {
-        // Ha nem volt nettó változás, de az életerő 0-ra csökkent (pl. pont annyi sebzést kapott, amennyi életereje volt)
-        // és még nem game over. Ez a feltétel ritkábban teljesülhet a fenti logikával, de biztonsági ellenőrzés.
-        // Ebben az esetben is frissíteni kell, hogy a 0-s életerő beállítódjon.
         setPlayerHealthState(0);
         gameShouldBeOver = true;
     }
 
 
-    if (scoreAfterBulletHits !== currentScore) { // currentScore a scoreRef.current volt a checkCollisions elején
+    if (scoreAfterBulletHits !== currentScore) { 
       setScoreState(scoreAfterBulletHits);
     }
 
@@ -322,19 +313,8 @@ useEffect(() => {
     if (gameShouldBeOver && !gameOverRef.current) {
       setGameOverState(true);
     } else if (playerHealthRef.current <= 0 && !gameOverRef.current && !gameShouldBeOver) { 
-        // Ha a setPlayerHealthState (akár a gameLoop-ból, akár innen) már beállította az életerőt 0-ra,
-        // de a gameShouldBeOver még nem lett true ebben a ciklusban.
         setGameOverState(true);
     }
-  };
-  const handleShoot = () => {
-    if (gameOverRef.current) return;
-    const newBullet = {
-      id: Date.now() + Math.random(),
-      x: playerPositionRef.current.x + PLAYER_WIDTH / 2 - BULLET_WIDTH / 2,
-      y: playerPositionRef.current.y,
-    };
-    setBulletsState(prevBullets => [...prevBullets, newBullet]);
   };
 
   const restartGame = () => {
@@ -347,7 +327,6 @@ useEffect(() => {
     setEnemiesState([]);
     setBulletsState([]);
     setGameOverState(false);
-    // Életerő visszaállítása az új konstanssal
     setPlayerHealthState(INITIAL_PLAYER_HEALTH);
     setScoreState(0);
   };
@@ -358,28 +337,35 @@ useEffect(() => {
          <HealthBar 
           currentHealth={playerHealthState} 
           maxHealth={INITIAL_PLAYER_HEALTH} 
-          width={120} // Opcionális: egyedi szélesség
-          height={15}  // Opcionális: egyedi magasság
+          width={120} 
+          height={15}  
         />
-       
-
         <Text style={styles.statsText}>Pontszám: {scoreState}</Text>
       </View>
       <View style={styles.gameArea}>
+        {/* MÓDOSÍTÁS: PanGestureHandler körbeveszi a TapGestureHandler-t, ami körbeveszi a játékost */}
         <PanGestureHandler
           onGestureEvent={onPanGestureMove}
           onHandlerStateChange={onPanHandlerStateChange}
         >
-          <Animated.View style={{
-            position: 'absolute',
-            top: PLAYER_FIXED_Y,
-            width: PLAYER_WIDTH,
-            height: PLAYER_HEIGHT,
-            transform: [{ translateX: playerTranslateXAnim }],
-            zIndex: 20,
-          }}>
-            <Player />
-          </Animated.View>
+          <TapGestureHandler
+            onHandlerStateChange={onPlayerTap}
+            // Opcionális: finomhangolhatod a koppintás érzékelését, pl.:
+            // maxDist={10} // Maximális elmozdulás pixelben, ami még koppintásnak számít
+            // maxDurationMs={250} // Maximális időtartam ms-ban
+          >
+            <Animated.View style={{
+              position: 'absolute',
+              top: PLAYER_FIXED_Y,
+              width: PLAYER_WIDTH,
+              height: PLAYER_HEIGHT,
+              transform: [{ translateX: playerTranslateXAnim }],
+              zIndex: 20, // Biztosítja, hogy a játékos a többi elem felett legyen
+              // backgroundColor: 'rgba(0,255,0,0.2)', // Ideiglenes, a tap target vizualizálásához
+            }}>
+              <Player />
+            </Animated.View>
+          </TapGestureHandler>
         </PanGestureHandler>
 
         {enemiesState.map(enemy => (
@@ -396,8 +382,15 @@ useEffect(() => {
           </View>
         )}
       </View>
+      {/* MÓDOSÍTÁS: A "Lövés" gomb eltávolítva, helyette lehetne itt más infó */}
       <View style={styles.controls}>
-        <Button title="Lövés" onPress={handleShoot} disabled={gameOverState} />
+        {/* <Button title="Lövés" onPress={handleShoot} disabled={gameOverState} /> */}
+        {!gameOverState && (
+            <Text style={styles.controlsText}>
+                {Platform.OS === 'web' ? "Mozgás: 'A'/'S'. " : "Mozgás: Húzás. "}
+                Lövés: Koppints a játékosra.
+            </Text>
+        )}
       </View>
     </GestureHandlerRootView>
   );
@@ -413,7 +406,7 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     paddingHorizontal: 15,
     flexDirection: 'row',
-     alignItems: 'center',
+    alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#111', 
     borderBottomWidth: 1,
@@ -452,5 +445,12 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#333',
     backgroundColor: '#111',
+    paddingHorizontal: 10, // Kis padding, hogy a szöveg ne érjen a széléhez
   },
+  // ÚJ stílus a vezérlő szöveghez
+  controlsText: {
+    color: '#aaa',
+    fontSize: 14,
+    textAlign: 'center',
+  }
 });
