@@ -5,6 +5,9 @@ import Player from './components/Player.js';
 import Enemy from './components/Enemy';
 import Bullet from './components/Bullet';
 
+import HealthBar from './components/HealthBar';
+
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const PLAYER_WIDTH = 50;
 const PLAYER_HEIGHT = 50;
@@ -13,8 +16,8 @@ const ENEMY_HEIGHT = 40;
 const BULLET_WIDTH = 10;
 const BULLET_HEIGHT = 20;
 
-const CONTROLS_HEIGHT = 100;
-const PLAYER_VERTICAL_MARGIN_FROM_CONTROLS = 20;
+const CONTROLS_HEIGHT = 120;
+const PLAYER_VERTICAL_MARGIN_FROM_CONTROLS = -10;
 
 const PLAYER_INITIAL_X = SCREEN_WIDTH / 2 - PLAYER_WIDTH / 2;
 const PLAYER_FIXED_Y = SCREEN_HEIGHT - PLAYER_HEIGHT - CONTROLS_HEIGHT - PLAYER_VERTICAL_MARGIN_FROM_CONTROLS;
@@ -352,7 +355,14 @@ useEffect(() => {
   return (
     <GestureHandlerRootView style={styles.container}>
       <View style={styles.statsContainer}>
-        <Text style={styles.statsText}>Életerő: {playerHealthState}</Text>
+         <HealthBar 
+          currentHealth={playerHealthState} 
+          maxHealth={INITIAL_PLAYER_HEALTH} 
+          width={120} // Opcionális: egyedi szélesség
+          height={15}  // Opcionális: egyedi magasság
+        />
+       
+
         <Text style={styles.statsText}>Pontszám: {scoreState}</Text>
       </View>
       <View style={styles.gameArea}>
@@ -399,10 +409,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   statsContainer: {
-    paddingTop: Platform.OS === 'ios' ? 40 : 20, 
+    paddingTop: Platform.OS === 'ios' ? 40 : 30, 
     paddingBottom: 10,
     paddingHorizontal: 15,
     flexDirection: 'row',
+     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: '#111', 
     borderBottomWidth: 1,
